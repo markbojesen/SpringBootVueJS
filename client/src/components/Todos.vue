@@ -57,6 +57,7 @@
 </template>
 
 <script>
+    import api from '../Api';
 
     // visibility filters
     let filters = {
@@ -94,11 +95,18 @@
             }
         },
 
+
         mounted() {
-            // inject some startup data
-            this.todos = [{title: 'Drink coffee', completed:false},{title: 'Write REST API', completed:false}];
-            // hide the loading message
-            this.loading = false;
+            api.getAll()
+                .then(response => {
+                    this.$log.debug("Data loaded: ", response.data)
+                    this.todos = response.data
+                })
+                .catch(error => {
+                    this.$log.debug(error)
+                    this.error = "Failed to load todos"
+                })
+                .finally(() => this.loading = false)
         },
 
         // computed properties
@@ -136,64 +144,91 @@
 
         // methods that implement data logic.
         // note there's no DOM manipulation here at all.
-        methods: {
+            methods: {
 
-            addTodo: function () {
-                var value = this.newTodo && this.newTodo.trim()
-                if (!value) {
-                    return
-                }
+                addTodo: function () {
+                    var value = this.newTodo && this.newTodo.trim()
+                    if (!value) {
+                        return
+                    }
 
-                this.todos.push({
-                    title: value,
-                    completed: false
-                });
+                    api.createNew(value, false).then( (response) => {
+                        this.$log.debug("New item created:", response);
+                        this.todos.push({
+                            id: response.data.id,
+                            title: value,
+                            completed: false
+                        })
+                    }).catch((error) => {
+                        this.$log.debug(error);
+                        this.error = "Failed to add todo"
+                    });
 
-                this.newTodo = ''
+                    this.newTodo = ''
+                },
+
+                setVisibility: function(vis) {
+                    this.visibility = vis
+                },
+
+                completeTodo (todo) {
+                    api.updateForId(todo.id, todo.title, todo.completed).then((response) => {
+                        this.$log.info("Item updated:", response.data);
+                    }).catch((error) => {
+                        this.$log.debug(error)
+                        todo.completed = !todo.completed
+                        this.error = "Failed to update todo"
+                    });
+                },
+                removeTodo: function (todo) { // notice NOT using "=>" syntax
+                    api.removeForId(todo.id).then(() => { // notice AM using "=>" syntax
+                        this.$log.debug("Item removed:", todo);
+                        this.todos.splice(this.todos.indexOf(todo), 1)
+                    }).catch((error) => {
+                        this.$log.debug(error);
+                        this.error = "Failed to remove todo"
+                    });
+                },
+
+                editTodo: function (todo) {
+                    this.beforeEditCache = todo.title
+                    this.editedTodo = todo
+                },
+
+                doneEdit: function (todo) {
+                    if (!this.editedTodo) {
+                        return
+                    }
+                    this.$log.info("Item updated:", todo);
+                    api.updateForId(todo.id, todo.title.trim(), todo.completed).then((response) => {
+                        this.$log.info("Item updated:", response.data);
+                        this.editedTodo = null
+                        todo.title = todo.title.trim()
+                    }).catch((error) => {
+                        this.$log.debug(error)
+                        this.cancelEdit(todo)
+                        this.error = "Failed to update todo"
+                    });
+
+                    if (!todo.title) {
+                        this.removeTodo(todo)
+                    }
+                },
+
+                cancelEdit: function (todo) {
+                    this.editedTodo = null
+                    todo.title = this.beforeEditCache
+                },
+
+                removeCompleted: function () {
+                    this.todos = filters.active(this.todos)
+                },
+
+                handleErrorClick: function () {
+                    this.error = null;
+                },
+
             },
-
-            setVisibility: function(vis) {
-                this.visibility = vis
-            },
-
-            completeTodo (todo) {
-            },
-
-            removeTodo: function (todo) { // notice NOT using "=>" syntax
-                this.todos.splice(this.todos.indexOf(todo), 1)
-            },
-
-            editTodo: function (todo) {
-                this.beforeEditCache = todo.title
-                this.editedTodo = todo
-            },
-
-            doneEdit: function (todo) {
-                if (!this.editedTodo) {
-                    return
-                }
-
-                this.editedTodo = null
-                todo.title = todo.title.trim()
-
-                if (!todo.title) {
-                    this.removeTodo(todo)
-                }
-            },
-
-            cancelEdit: function (todo) {
-                this.editedTodo = null
-                todo.title = this.beforeEditCache
-            },
-
-            removeCompleted: function () {
-                this.todos = filters.active(this.todos)
-            },
-
-            handleErrorClick: function () {
-                this.error = null;
-            },
-        },
 
         // a custom directive to wait for the DOM to be updated
         // before focusing on the input field.
